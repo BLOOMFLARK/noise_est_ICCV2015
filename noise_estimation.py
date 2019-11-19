@@ -4,11 +4,12 @@
 
 
 import numpy as np
+import cv2 as cv
 from cv2 import imread
 from utils import im2patch, im2double
 import time
 
-def noise_estimate(im, pch_size=8):
+def noise_estimate(image, patch_s=8):
     '''
     Implement of noise level estimation of the following paper:
     Chen G , Zhu F , Heng P A . An Efficient Statistical Method for Image Noise Level Estimation[C]// 2015 IEEE International Conference
@@ -20,46 +21,55 @@ def noise_estimate(im, pch_size=8):
         noise_level: the estimated noise level
     '''
 
-    if im.ndim == 3:
-        im = im.transpose((2, 0, 1))
+    if image.ndim == 3:
+    	# H * W * 3 -> 3 x H x W
+        image = image.transpose((2, 0, 1))
     else:
-        im = np.expand_dims(im, axis=0)
+    	# [1,2] -> [[1,2]]
+        image = np.expand_dims(image, axis=0)
 
     # image to patch
-    pch = im2patch(im, pch_size, 3)  # C x pch_size x pch_size x num_pch tensor
-    num_pch = pch.shape[3]
-    pch = pch.reshape((-1, num_pch))  # d x num_pch matrix
-    d = pch.shape[0]
+    patch = im2patch(image, patch_s, 3)  # C x pch_size x pch_size x num_pch tensor
+    n_patch = patch.shape[3]
+    patch = patch.reshape((-1, n_patch))  # d x num_pch matrix
+    d = patch.shape[0]
 
-    mu = pch.mean(axis=1, keepdims=True)  # d x 1
-    X = pch - mu
-    sigma_X = np.matmul(X, X.transpose()) / num_pch
-    sig_value, _ = np.linalg.eigh(sigma_X)
-    sig_value.sort()
+    mu = patch.mean(axis=1, keepdims=True)  # d x 1
+    X = patch - mu
+    sigma_X = np.matmul(X, X.transpose()) / n_patch
 
-    for ii in range(-1, -d-1, -1):
-        tau = np.mean(sig_value[:ii])
-        if np.sum(sig_value[:ii]>tau) == np.sum(sig_value[:ii] < tau):
+    eigenvalues, _ = np.linalg.eigh(sigma_X)
+    eigenvalues.sort()
+
+    for i in range(-1, -d - 1, -1):
+        tau = np.mean(eigenvalues[:i])
+        if np.sum(eigenvalues[:i] > tau) == np.sum(eigenvalues[:i] < tau):
             return np.sqrt(tau)
 
 
 if __name__ == '__main__':
-    im = imread('./lena.png')
-    im = im2double(im)
+    image = imread('./lena.png')
+    image = im2double(image)
+    #cv.imshow("Image", image)
+    #cv.waitKey(0)
 
     noise_level = [5, 15, 20, 30, 40]
 
     for level in noise_level:
         sigma = level / 255
 
-        im_noise = im + np.random.randn(*im.shape) * sigma
+        im_noise = image + np.random.randn(*image.shape) * sigma
+
+        #if level == 40:
+        #    cv.imshow('Noisy',im_noise)
+        #    cv.waitKey(0)
 
         start = time.time()
-        est_level = noise_estimate(im_noise, 8)
+        est_level = noise_estimate(im_noise)
         end = time.time()
-        time_elapsed = end -start
+        time_elapsed = end - start
 
         str_p = "Time: {0:.4f}, Ture Level: {1:6.4f}, Estimated Level: {2:6.4f}"
-        print(str_p.format(time_elapsed, level, est_level*255))
+        print(str_p.format(time_elapsed, level, est_level * 255))
 
 
